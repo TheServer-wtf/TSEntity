@@ -1,0 +1,685 @@
+package com.mikemik44.tsgrabber;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Color;
+import org.bukkit.Location;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Display;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.ItemDisplay;
+import org.bukkit.entity.Player;
+import org.bukkit.entity.TextDisplay;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.util.Vector;
+
+import com.comphenix.protocol.PacketType;
+import com.comphenix.protocol.ProtocolLibrary;
+import com.comphenix.protocol.ProtocolManager;
+import com.comphenix.protocol.events.ListenerPriority;
+import com.comphenix.protocol.events.PacketAdapter;
+import com.comphenix.protocol.events.PacketContainer;
+import com.comphenix.protocol.events.PacketEvent;
+import com.comphenix.protocol.wrappers.WrappedDataValue;
+import com.comphenix.protocol.wrappers.WrappedDataWatcher;
+
+import net.md_5.bungee.api.chat.ClickEvent;
+import net.md_5.bungee.api.chat.ComponentBuilder;
+import net.md_5.bungee.api.chat.HoverEvent;
+import net.md_5.bungee.api.chat.TextComponent;
+
+public final class TSCamShowcase extends JavaPlugin implements Listener {
+
+	private static final byte FLAG_GLOWING = 0x40;
+
+	private static final Color GREEN_GLOW = Color.fromARGB(255, 50, 255, 50);
+	private static final Color YELLOW_GLOW = Color.fromARGB(255, 255, 255, 50);
+
+	private static final long WAND_COOLDOWN_MS = 250L;
+
+	private ProtocolManager manager;
+
+	// current green selected entity
+	private final Map<UUID, UUID> selectedEntities = new HashMap<>();
+
+	// pending passenger queue for each player, queue.get(0) is the current yellow one
+	private final Map<UUID, List<UUID>> pendingPassengers = new HashMap<>();
+
+	// reused view range for confirm flow
+	private final Map<UUID, Float> selectedDist = new HashMap<>();
+
+	// wand cooldown
+	private final Map<UUID, Long> lastWandUse = new HashMap<>();
+
+	@Override
+	public void onEnable() {
+		manager = ProtocolLibrary.getProtocolManager();
+
+		getServer().getPluginManager().registerEvents(this, this);
+		registerMetadataInterceptor();
+
+		getLogger().info("Plugin TSCam Loaded");
+	}
+
+	@Override
+	public void onDisable() {
+		for (Player player : Bukkit.getOnlinePlayers()) {
+			clearPending(player);
+
+			UUID selectedId = selectedEntities.remove(player.getUniqueId());
+			if (selectedId == null) {
+				continue;
+			}
+
+			Entity entity = Bukkit.getEntity(selectedId);
+			if (entity != null) {
+				sendGlowPacket(player, entity, false, Color.WHITE);
+			}
+		}
+	}
+
+	private boolean isSupportedDisplay(Entity entity) {
+		return entity instanceof BlockDisplay || entity instanceof TextDisplay || entity instanceof ItemDisplay;
+	}
+
+	private boolean isOnCooldown(Player player) {
+		long now = System.currentTimeMillis();
+		Long last = lastWandUse.get(player.getUniqueId());
+		if (last != null && now - last < WAND_COOLDOWN_MS) {
+			return true;
+		}
+		lastWandUse.put(player.getUniqueId(), now);
+		return false;
+	}
+
+	private List<Entity> getSupportedPassengers(Entity entity) {
+		List<Entity> result = new ArrayList<>();
+		for (Entity passenger : entity.getPassengers()) {
+			if (isSupportedDisplay(passenger)) {
+				result.add(passenger);
+			}
+		}
+		return result;
+	}
+
+	private UUID getCurrentPendingId(Player player) {
+		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
+		if (queue == null || queue.isEmpty()) {
+			return null;
+		}
+		return queue.get(0);
+	}
+
+	private Entity getCurrentPendingEntity(Player player) {
+		UUID id = getCurrentPendingId(player);
+		return id == null ? null : Bukkit.getEntity(id);
+	}
+
+	private void glowCurrentPending(Player player) {
+		Entity pending = getCurrentPendingEntity(player);
+		if (pending != null) {
+			sendGlowPacket(player, pending, true, YELLOW_GLOW);
+		}
+	}
+
+	private void clearPending(Player player) {
+		UUID playerId = player.getUniqueId();
+
+		List<UUID> queue = pendingPassengers.remove(playerId);
+		selectedDist.remove(playerId);
+
+		if (queue != null) {
+			for (UUID id : queue) {
+				Entity entity = Bukkit.getEntity(id);
+				if (entity != null) {
+					sendGlowPacket(player, entity, false, Color.WHITE);
+				}
+			}
+		}
+	}
+
+	private void setPendingList(Player player, List<Entity> passengers, float dist) {
+		clearPending(player);
+
+		if (passengers == null || passengers.isEmpty()) {
+			return;
+		}
+
+		List<UUID> ids = new ArrayList<>();
+		for (Entity passenger : passengers) {
+			if (passenger != null && isSupportedDisplay(passenger)) {
+				ids.add(passenger.getUniqueId());
+			}
+		}
+
+		if (ids.isEmpty()) {
+			return;
+		}
+
+		pendingPassengers.put(player.getUniqueId(), ids);
+		selectedDist.put(player.getUniqueId(), dist);
+		glowCurrentPending(player);
+	}
+
+	private void advancePendingQueue(Player player) {
+		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
+		if (queue == null || queue.isEmpty()) {
+			return;
+		}
+
+		UUID oldId = queue.remove(0);
+		Entity oldEntity = Bukkit.getEntity(oldId);
+		if (oldEntity != null) {
+			sendGlowPacket(player, oldEntity, false, Color.WHITE);
+		}
+
+		if (queue.isEmpty()) {
+			pendingPassengers.remove(player.getUniqueId());
+		} else {
+			glowCurrentPending(player);
+		}
+	}
+
+	private void prependPassengers(Player player, List<Entity> passengers) {
+		if (passengers == null || passengers.isEmpty()) {
+			return;
+		}
+
+		UUID playerId = player.getUniqueId();
+		List<UUID> queue = pendingPassengers.computeIfAbsent(playerId, k -> new ArrayList<>());
+
+		int insertIndex = 0;
+		for (Entity passenger : passengers) {
+			if (passenger != null && isSupportedDisplay(passenger)) {
+				queue.add(insertIndex++, passenger.getUniqueId());
+			}
+		}
+
+		glowCurrentPending(player);
+	}
+
+	private void switchSelection(Player player, Entity newEntity, Color color) {
+		UUID playerId = player.getUniqueId();
+		UUID oldSelectedId = selectedEntities.get(playerId);
+
+		// update first so interceptor stops treating old one as selected
+		if (newEntity == null) {
+			selectedEntities.remove(playerId);
+		} else {
+			selectedEntities.put(playerId, newEntity.getUniqueId());
+		}
+
+		if (oldSelectedId != null && (newEntity == null || !oldSelectedId.equals(newEntity.getUniqueId()))) {
+			Entity oldEntity = Bukkit.getEntity(oldSelectedId);
+			if (oldEntity != null) {
+				sendGlowPacket(player, oldEntity, false, Color.WHITE);
+			}
+		}
+
+		if (newEntity != null) {
+			sendGlowPacket(player, newEntity, true, color);
+		}
+	}
+
+	private void sendConnectedEntityOptions(Player player) {
+		int count = 0;
+		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
+		if (queue != null) {
+			count = queue.size();
+		}
+
+		player.sendMessage(ChatColor.GOLD + "" + ChatColor.BOLD + "Connected Display Entities Found");
+		player.sendMessage(ChatColor.YELLOW + "Pending passengers: " + ChatColor.AQUA + count);
+
+		TextComponent prefix = new TextComponent(ChatColor.GRAY + "[");
+
+		TextComponent confirm = new TextComponent(ChatColor.GREEN + "" + ChatColor.BOLD + "Apply Same Settings");
+		confirm.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity confirm"));
+		confirm.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+				new ComponentBuilder(ChatColor.GREEN + "Apply the same distance to the yellow passenger").create()));
+
+		TextComponent sep1 = new TextComponent(ChatColor.GRAY + " | ");
+
+		TextComponent change = new TextComponent(ChatColor.YELLOW + "" + ChatColor.BOLD + "Manual");
+		change.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity change"));
+		change.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+				new ComponentBuilder(ChatColor.YELLOW + "Make the yellow passenger the new green selection").create()));
+
+		TextComponent sep2 = new TextComponent(ChatColor.GRAY + " | ");
+
+		TextComponent deny = new TextComponent(ChatColor.RED + "" + ChatColor.BOLD + "Skip");
+		deny.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity deny"));
+		deny.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+				new ComponentBuilder(ChatColor.RED + "Skip the yellow passenger and move to the next one").create()));
+
+		TextComponent suffix = new TextComponent(ChatColor.GRAY + "]");
+
+		TextComponent line = new TextComponent();
+		line.addExtra(prefix);
+		line.addExtra(confirm);
+		line.addExtra(sep1);
+		line.addExtra(change);
+		line.addExtra(sep2);
+		line.addExtra(deny);
+		line.addExtra(suffix);
+
+		player.spigot().sendMessage(line);
+	}
+
+	private void finishEditingMessage(Player player) {
+		TextComponent finish = new TextComponent(ChatColor.GREEN + "" + ChatColor.BOLD + "Finish Editing");
+		finish.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity cancel"));
+		finish.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+				new ComponentBuilder(ChatColor.GREEN + "Unselect everything and stop glowing").create()));
+
+		player.sendMessage(ChatColor.YELLOW + "No more connected passengers. Click when finished editing.");
+		TextComponent tc = new TextComponent();
+		tc.addExtra(finish);
+		player.spigot().sendMessage(tc);
+	}
+
+	@EventHandler
+	public void onPlayerLeftClick(PlayerInteractEvent event) {
+		Player player = event.getPlayer();
+		ItemStack item = player.getInventory().getItemInMainHand();
+
+		if (!isEditStick(item)) {
+			return;
+		}
+
+		Action action = event.getAction();
+		if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK
+				&& action != Action.LEFT_CLICK_AIR && action != Action.LEFT_CLICK_BLOCK) {
+			return;
+		}
+
+		if (isOnCooldown(player)) {
+			event.setCancelled(true);
+			return;
+		}
+
+		if (action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK) {
+			Entity closestLookEntity = null;
+			double bestDot = -1.0;
+
+			Vector lookDir = player.getEyeLocation().getDirection().normalize();
+			Location eyeLoc = player.getEyeLocation();
+
+			for (Entity e : player.getNearbyEntities(10, 10, 10)) {
+				if (e == player) {
+					continue;
+				}
+				if (!isSupportedDisplay(e)) {
+					continue;
+				}
+
+				Vector toEntity = e.getLocation().toVector()
+						.add(new Vector(0, e.getHeight() * 0.5, 0))
+						.subtract(eyeLoc.toVector());
+
+				if (toEntity.lengthSquared() == 0) {
+					continue;
+				}
+
+				toEntity.normalize();
+				double dot = lookDir.dot(toEntity);
+
+				if (dot > bestDot) {
+					bestDot = dot;
+					closestLookEntity = e;
+				}
+			}
+
+			if (closestLookEntity == null) {
+				return;
+			}
+
+			clearPending(player);
+			switchSelection(player, closestLookEntity, GREEN_GLOW);
+
+			player.sendMessage(ChatColor.GREEN + "Selected entity: " + ChatColor.YELLOW
+					+ closestLookEntity.getType().name() + ChatColor.GRAY + " [" + closestLookEntity.getUniqueId() + "]");
+
+			event.setCancelled(true);
+			return;
+		}
+
+		UUID selectedId = selectedEntities.get(player.getUniqueId());
+		if (selectedId == null) {
+			player.sendMessage(ChatColor.RED + "You must select a display entity first!");
+			event.setCancelled(true);
+			return;
+		}
+
+		Entity selected = Bukkit.getEntity(selectedId);
+		if (selected == null) {
+			selectedEntities.remove(player.getUniqueId());
+			clearPending(player);
+			player.sendMessage(ChatColor.RED + "Selected entity no longer exists.");
+			event.setCancelled(true);
+			return;
+		}
+
+		if (!(selected instanceof Display display)) {
+			player.sendMessage(ChatColor.RED + "Selected entity is not a display entity.");
+			event.setCancelled(true);
+			return;
+		}
+
+		Location clickedLocation = player.getLocation().add(0.5, 0.5, 0.5);
+
+		double distance = selected.getLocation().distance(clickedLocation);
+		float viewRange = (float) distance / 64.0f;
+
+		display.setViewRange(viewRange);
+
+		player.sendMessage(ChatColor.GREEN + "Set display view range to " + ChatColor.YELLOW
+				+ String.format("%.2f", viewRange));
+		event.setCancelled(true);
+
+		List<Entity> passengers = getSupportedPassengers(selected);
+		if (!passengers.isEmpty()) {
+			setPendingList(player, passengers, viewRange);
+			sendConnectedEntityOptions(player);
+		} else {
+			clearPending(player);
+			finishEditingMessage(player);
+		}
+	}
+
+	private boolean isEditStick(ItemStack item) {
+		if (item == null || item.getType().isAir()) {
+			return false;
+		}
+
+		if (!item.getType().name().equalsIgnoreCase("STICK")) {
+			return false;
+		}
+
+		if (!item.hasItemMeta() || !item.getItemMeta().hasDisplayName()) {
+			return false;
+		}
+
+		String expected = ChatColor.translateAlternateColorCodes('&', "&2edit");
+		String actual = item.getItemMeta().getDisplayName();
+		return expected.equals(actual);
+	}
+
+	private void registerMetadataInterceptor() {
+		manager.addPacketListener(
+				new PacketAdapter(this, ListenerPriority.NORMAL, PacketType.Play.Server.ENTITY_METADATA) {
+					@Override
+					public void onPacketSending(PacketEvent event) {
+						Player viewer = event.getPlayer();
+
+						UUID selectedId = selectedEntities.get(viewer.getUniqueId());
+						UUID pendingId = getCurrentPendingId(viewer);
+
+						if (selectedId == null && pendingId == null) {
+							return;
+						}
+
+						PacketContainer packet = event.getPacket();
+						int entityId = packet.getIntegers().read(0);
+
+						Entity entity = findEntityByEntityId(viewer, entityId);
+						if (entity == null) {
+							return;
+						}
+
+						UUID entityUuid = entity.getUniqueId();
+						boolean shouldGlow = (selectedId != null && selectedId.equals(entityUuid))
+								|| (pendingId != null && pendingId.equals(entityUuid));
+
+						rewriteMetadataGlow(packet, shouldGlow);
+					}
+				});
+	}
+
+	private Entity findEntityByEntityId(Player viewer, int entityId) {
+		for (Entity entity : viewer.getWorld().getEntities()) {
+			if (entity.getEntityId() == entityId) {
+				return entity;
+			}
+		}
+		return null;
+	}
+
+	private void sendGlowPacket(Player viewer, Entity entity, boolean glowing, Color c) {
+		if (entity instanceof Display display) {
+			display.setGlowColorOverride(glowing ? c : null);
+		}
+
+		PacketContainer packet = manager.createPacket(PacketType.Play.Server.ENTITY_METADATA);
+		packet.getIntegers().write(0, entity.getEntityId());
+
+		byte currentFlags = getEntityFlags(entity);
+		byte newFlags = glowing ? (byte) (currentFlags | FLAG_GLOWING) : (byte) (currentFlags & ~FLAG_GLOWING);
+
+		List<WrappedDataValue> values = new ArrayList<>();
+		WrappedDataWatcher.Serializer byteSerializer = WrappedDataWatcher.Registry.get(Byte.class);
+		values.add(new WrappedDataValue(0, byteSerializer, newFlags));
+
+		packet.getDataValueCollectionModifier().write(0, values);
+
+		try {
+			manager.sendServerPacket(viewer, packet);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+
+	private void rewriteMetadataGlow(PacketContainer packet, boolean glowing) {
+		List<WrappedDataValue> values = packet.getDataValueCollectionModifier().read(0);
+		if (values == null) {
+			values = new ArrayList<>();
+		} else {
+			values = new ArrayList<>(values);
+		}
+
+		WrappedDataWatcher.Serializer byteSerializer = WrappedDataWatcher.Registry.get(Byte.class);
+		boolean foundFlags = false;
+
+		for (int i = 0; i < values.size(); i++) {
+			WrappedDataValue value = values.get(i);
+
+			if (value.getIndex() == 0 && value.getValue() instanceof Byte) {
+				byte flags = (Byte) value.getValue();
+
+				if (glowing) {
+					flags = (byte) (flags | FLAG_GLOWING);
+				} else {
+					flags = (byte) (flags & ~FLAG_GLOWING);
+				}
+
+				values.set(i, new WrappedDataValue(0, byteSerializer, flags));
+				foundFlags = true;
+				break;
+			}
+		}
+
+		if (!foundFlags && glowing) {
+			values.add(new WrappedDataValue(0, byteSerializer, FLAG_GLOWING));
+		}
+
+		packet.getDataValueCollectionModifier().write(0, values);
+	}
+
+	private byte getEntityFlags(Entity entity) {
+		byte flags = 0;
+
+		if (entity.getFireTicks() > 0) {
+			flags |= 0x01;
+		}
+		if (entity.isGlowing()) {
+			flags |= 0x40;
+		}
+
+		return flags;
+	}
+
+	@Override
+	public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+		if (!command.getName().equalsIgnoreCase("tsentity")) {
+			return false;
+		}
+
+		if (!(sender instanceof Player player)) {
+			sender.sendMessage(ChatColor.RED + "Only players can use this command.");
+			return true;
+		}
+
+		if (args.length == 0) {
+			player.sendMessage(ChatColor.YELLOW + "/tsentity wand");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity cancel");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity confirm");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity change");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity deny");
+			return true;
+		}
+
+		if (args[0].equalsIgnoreCase("wand")) {
+			ItemStack wand = new ItemStack(org.bukkit.Material.STICK);
+			org.bukkit.inventory.meta.ItemMeta meta = wand.getItemMeta();
+
+			if (meta != null) {
+				meta.setDisplayName(ChatColor.translateAlternateColorCodes('&', "&2edit"));
+				wand.setItemMeta(meta);
+			}
+
+			player.getInventory().addItem(wand);
+			player.sendMessage(ChatColor.GREEN + "You received the edit wand.");
+			return true;
+		}
+
+		if (args[0].equalsIgnoreCase("cancel")) {
+			clearPending(player);
+			switchSelection(player, null, GREEN_GLOW);
+			player.sendMessage(ChatColor.YELLOW + "Selection cleared.");
+			return true;
+		}
+
+		if (args[0].equalsIgnoreCase("deny")) {
+			Entity pendingEntity = getCurrentPendingEntity(player);
+
+			if (pendingEntity == null) {
+				player.sendMessage(ChatColor.RED + "There is no pending connected entity change.");
+				return true;
+			}
+
+			List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+
+			advancePendingQueue(player);
+
+			if (!nextPassengers.isEmpty()) {
+				prependPassengers(player, nextPassengers);
+			}
+
+			if (getCurrentPendingId(player) != null) {
+				sendConnectedEntityOptions(player);
+			} else {
+				finishEditingMessage(player);
+			}
+
+			player.sendMessage(ChatColor.YELLOW + "Skipped connected entity.");
+			return true;
+		}
+
+		if (args[0].equalsIgnoreCase("confirm")) {
+			Entity pendingEntity = getCurrentPendingEntity(player);
+			Float pendingDist = selectedDist.get(player.getUniqueId());
+
+			if (pendingEntity == null || pendingDist == null) {
+				player.sendMessage(ChatColor.RED + "There is no pending connected entity change.");
+				return true;
+			}
+
+			if (!(pendingEntity instanceof Display pendingDisplay)) {
+				advancePendingQueue(player);
+				player.sendMessage(ChatColor.RED + "The connected entity is not a display entity.");
+				if (getCurrentPendingId(player) != null) {
+					sendConnectedEntityOptions(player);
+				} else {
+					finishEditingMessage(player);
+				}
+				return true;
+			}
+
+			List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+
+			advancePendingQueue(player);
+			pendingDisplay.setViewRange(pendingDist);
+			switchSelection(player, pendingEntity, GREEN_GLOW);
+
+			player.sendMessage(ChatColor.GREEN + "Applied view range " + ChatColor.YELLOW
+					+ String.format("%.2f", pendingDist) + ChatColor.GREEN + " to the connected display entity.");
+
+			if (!nextPassengers.isEmpty()) {
+				prependPassengers(player, nextPassengers);
+			}
+
+			if (getCurrentPendingId(player) != null) {
+				sendConnectedEntityOptions(player);
+			} else {
+				finishEditingMessage(player);
+			}
+
+			return true;
+		}
+
+		if (args[0].equalsIgnoreCase("change")) {
+			Entity pendingEntity = getCurrentPendingEntity(player);
+
+			if (pendingEntity == null) {
+				player.sendMessage(ChatColor.RED + "There is no pending connected entity to switch to.");
+				return true;
+			}
+
+			if (!isSupportedDisplay(pendingEntity)) {
+				advancePendingQueue(player);
+				player.sendMessage(ChatColor.RED + "The connected entity is not a display entity.");
+				if (getCurrentPendingId(player) != null) {
+					sendConnectedEntityOptions(player);
+				} else {
+					finishEditingMessage(player);
+				}
+				return true;
+			}
+
+			List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+
+			advancePendingQueue(player);
+			switchSelection(player, pendingEntity, GREEN_GLOW);
+
+			player.sendMessage(ChatColor.GREEN + "Now manually editing connected entity.");
+
+			if (!nextPassengers.isEmpty()) {
+				prependPassengers(player, nextPassengers);
+			}
+
+			if (getCurrentPendingId(player) != null) {
+				sendConnectedEntityOptions(player);
+			} else {
+				finishEditingMessage(player);
+			}
+
+			return true;
+		}
+
+		player.sendMessage(ChatColor.RED + "Unknown subcommand.");
+		return true;
+	}
+}
