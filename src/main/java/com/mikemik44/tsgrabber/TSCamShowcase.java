@@ -2,8 +2,10 @@ package com.mikemik44.tsgrabber;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import org.bukkit.Bukkit;
@@ -55,14 +57,17 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 	// current green selected entity
 	private final Map<UUID, UUID> selectedEntities = new HashMap<>();
 
-	// pending passenger queue for each player, queue.get(0) is the current yellow one
+	// pending passenger queue for each player, queue.get(0) is current yellow
 	private final Map<UUID, List<UUID>> pendingPassengers = new HashMap<>();
 
-	// reused view range for confirm flow
+	// reused view range
 	private final Map<UUID, Float> selectedDist = new HashMap<>();
 
 	// wand cooldown
 	private final Map<UUID, Long> lastWandUse = new HashMap<>();
+
+	// players currently doing manual step-through
+	private final Set<UUID> manualMode = new HashSet<>();
 
 	@Override
 	public void onEnable() {
@@ -78,6 +83,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 	public void onDisable() {
 		for (Player player : Bukkit.getOnlinePlayers()) {
 			clearPending(player);
+			manualMode.remove(player.getUniqueId());
 
 			UUID selectedId = selectedEntities.remove(player.getUniqueId());
 			if (selectedId == null) {
@@ -103,6 +109,22 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 		lastWandUse.put(player.getUniqueId(), now);
 		return false;
+	}
+
+	private boolean isInActiveChain(Player player, Entity entity) {
+		if (entity == null) {
+			return false;
+		}
+
+		UUID entityId = entity.getUniqueId();
+		UUID selectedId = selectedEntities.get(player.getUniqueId());
+
+		if (selectedId != null && selectedId.equals(entityId)) {
+			return true;
+		}
+
+		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
+		return queue != null && queue.contains(entityId);
 	}
 
 	private List<Entity> getSupportedPassengers(Entity entity) {
@@ -174,6 +196,12 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		glowCurrentPending(player);
 	}
 
+	private void updatePendingDistance(Player player, float dist) {
+		if (pendingPassengers.containsKey(player.getUniqueId())) {
+			selectedDist.put(player.getUniqueId(), dist);
+		}
+	}
+
 	private void advancePendingQueue(Player player) {
 		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
 		if (queue == null || queue.isEmpty()) {
@@ -204,7 +232,10 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		int insertIndex = 0;
 		for (Entity passenger : passengers) {
 			if (passenger != null && isSupportedDisplay(passenger)) {
-				queue.add(insertIndex++, passenger.getUniqueId());
+				UUID id = passenger.getUniqueId();
+				if (!queue.contains(id)) {
+					queue.add(insertIndex++, id);
+				}
 			}
 		}
 
@@ -215,7 +246,6 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		UUID playerId = player.getUniqueId();
 		UUID oldSelectedId = selectedEntities.get(playerId);
 
-		// update first so interceptor stops treating old one as selected
 		if (newEntity == null) {
 			selectedEntities.remove(playerId);
 		} else {
@@ -256,14 +286,14 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		TextComponent change = new TextComponent(ChatColor.YELLOW + "" + ChatColor.BOLD + "Manual");
 		change.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity change"));
 		change.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-				new ComponentBuilder(ChatColor.YELLOW + "Make the yellow passenger the new green selection").create()));
+				new ComponentBuilder(ChatColor.YELLOW + "Manually edit this passenger, then click Finish Current").create()));
 
 		TextComponent sep2 = new TextComponent(ChatColor.GRAY + " | ");
 
 		TextComponent deny = new TextComponent(ChatColor.RED + "" + ChatColor.BOLD + "Skip");
 		deny.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity deny"));
 		deny.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-				new ComponentBuilder(ChatColor.RED + "Skip the yellow passenger and move to the next one").create()));
+				new ComponentBuilder(ChatColor.RED + "Skip only this yellow passenger and move to the next queued one").create()));
 
 		TextComponent suffix = new TextComponent(ChatColor.GRAY + "]");
 
@@ -279,6 +309,37 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		player.spigot().sendMessage(line);
 	}
 
+	private void sendFinishCurrentOptions(Player player) {
+		int count = 0;
+		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
+		if (queue != null) {
+			count = queue.size();
+		}
+
+		player.sendMessage(ChatColor.GOLD + "" + ChatColor.BOLD + "Manual Editing Mode");
+		player.sendMessage(ChatColor.YELLOW + "Finish the current green display when ready. Remaining queue: "
+				+ ChatColor.AQUA + count);
+
+		TextComponent finishCurrent = new TextComponent(ChatColor.GREEN + "" + ChatColor.BOLD + "[Finish Current]");
+		finishCurrent.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity next"));
+		finishCurrent.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+				new ComponentBuilder(ChatColor.GREEN + "Move to the next queued display, or stop if none remain").create()));
+
+		TextComponent spacer = new TextComponent(" ");
+
+		TextComponent stop = new TextComponent(ChatColor.RED + "" + ChatColor.BOLD + "[Stop]");
+		stop.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity cancel"));
+		stop.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+				new ComponentBuilder(ChatColor.RED + "Stop editing and clear all glow").create()));
+
+		TextComponent line = new TextComponent();
+		line.addExtra(finishCurrent);
+		line.addExtra(spacer);
+		line.addExtra(stop);
+
+		player.spigot().sendMessage(line);
+	}
+
 	private void finishEditingMessage(Player player) {
 		TextComponent finish = new TextComponent(ChatColor.GREEN + "" + ChatColor.BOLD + "Finish Editing");
 		finish.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity cancel"));
@@ -289,6 +350,36 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		TextComponent tc = new TextComponent();
 		tc.addExtra(finish);
 		player.spigot().sendMessage(tc);
+	}
+
+	private void processNextManual(Player player) {
+		Entity pendingEntity = getCurrentPendingEntity(player);
+
+		if (pendingEntity == null) {
+			manualMode.remove(player.getUniqueId());
+			clearPending(player);
+			switchSelection(player, null, GREEN_GLOW);
+			player.sendMessage(ChatColor.YELLOW + "Manual editing complete.");
+			return;
+		}
+
+		List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+
+		advancePendingQueue(player);
+		switchSelection(player, pendingEntity, GREEN_GLOW);
+
+		if (!nextPassengers.isEmpty()) {
+			prependPassengers(player, nextPassengers);
+		}
+
+		player.sendMessage(ChatColor.GREEN + "Switched to next queued connected entity.");
+
+		if (getCurrentPendingId(player) != null) {
+			sendFinishCurrentOptions(player);
+		} else {
+			manualMode.remove(player.getUniqueId());
+			finishEditingMessage(player);
+		}
 	}
 
 	@EventHandler
@@ -347,11 +438,25 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 				return;
 			}
 
-			clearPending(player);
+			boolean keepChain = isInActiveChain(player, closestLookEntity);
+
+			if (!keepChain) {
+				clearPending(player);
+				manualMode.remove(player.getUniqueId());
+			}
+
 			switchSelection(player, closestLookEntity, GREEN_GLOW);
 
 			player.sendMessage(ChatColor.GREEN + "Selected entity: " + ChatColor.YELLOW
 					+ closestLookEntity.getType().name() + ChatColor.GRAY + " [" + closestLookEntity.getUniqueId() + "]");
+
+			if (keepChain) {
+				if (manualMode.contains(player.getUniqueId())) {
+					sendFinishCurrentOptions(player);
+				} else if (getCurrentPendingId(player) != null) {
+					sendConnectedEntityOptions(player);
+				}
+			}
 
 			event.setCancelled(true);
 			return;
@@ -368,6 +473,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		if (selected == null) {
 			selectedEntities.remove(player.getUniqueId());
 			clearPending(player);
+			manualMode.remove(player.getUniqueId());
 			player.sendMessage(ChatColor.RED + "Selected entity no longer exists.");
 			event.setCancelled(true);
 			return;
@@ -389,6 +495,20 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		player.sendMessage(ChatColor.GREEN + "Set display view range to " + ChatColor.YELLOW
 				+ String.format("%.2f", viewRange));
 		event.setCancelled(true);
+
+		// In manual mode, do not rebuild the queue. Just keep editing and show the finish button.
+		if (manualMode.contains(player.getUniqueId())) {
+			updatePendingDistance(player, viewRange);
+			sendFinishCurrentOptions(player);
+			return;
+		}
+
+		// If there is already a queue, keep it and only update the stored distance.
+		if (getCurrentPendingId(player) != null) {
+			updatePendingDistance(player, viewRange);
+			sendConnectedEntityOptions(player);
+			return;
+		}
 
 		List<Entity> passengers = getSupportedPassengers(selected);
 		if (!passengers.isEmpty()) {
@@ -548,6 +668,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 			player.sendMessage(ChatColor.YELLOW + "/tsentity confirm");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity change");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity deny");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity next");
 			return true;
 		}
 
@@ -566,6 +687,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 
 		if (args[0].equalsIgnoreCase("cancel")) {
+			manualMode.remove(player.getUniqueId());
 			clearPending(player);
 			switchSelection(player, null, GREEN_GLOW);
 			player.sendMessage(ChatColor.YELLOW + "Selection cleared.");
@@ -573,6 +695,8 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 
 		if (args[0].equalsIgnoreCase("deny")) {
+			manualMode.remove(player.getUniqueId());
+
 			Entity pendingEntity = getCurrentPendingEntity(player);
 
 			if (pendingEntity == null) {
@@ -580,13 +704,8 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 				return true;
 			}
 
-			List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
-
+			// Skip only the current yellow entry. Do NOT add its passengers.
 			advancePendingQueue(player);
-
-			if (!nextPassengers.isEmpty()) {
-				prependPassengers(player, nextPassengers);
-			}
 
 			if (getCurrentPendingId(player) != null) {
 				sendConnectedEntityOptions(player);
@@ -599,6 +718,8 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 
 		if (args[0].equalsIgnoreCase("confirm")) {
+			manualMode.remove(player.getUniqueId());
+
 			Entity pendingEntity = getCurrentPendingEntity(player);
 			Float pendingDist = selectedDist.get(player.getUniqueId());
 
@@ -664,18 +785,23 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 			advancePendingQueue(player);
 			switchSelection(player, pendingEntity, GREEN_GLOW);
 
-			player.sendMessage(ChatColor.GREEN + "Now manually editing connected entity.");
-
 			if (!nextPassengers.isEmpty()) {
 				prependPassengers(player, nextPassengers);
 			}
 
-			if (getCurrentPendingId(player) != null) {
-				sendConnectedEntityOptions(player);
-			} else {
-				finishEditingMessage(player);
+			manualMode.add(player.getUniqueId());
+			player.sendMessage(ChatColor.GREEN + "Now manually editing connected entity.");
+			sendFinishCurrentOptions(player);
+			return true;
+		}
+
+		if (args[0].equalsIgnoreCase("next")) {
+			if (!manualMode.contains(player.getUniqueId())) {
+				player.sendMessage(ChatColor.RED + "You are not currently in manual editing mode.");
+				return true;
 			}
 
+			processNextManual(player);
 			return true;
 		}
 
