@@ -1,5 +1,5 @@
 name: TSCam
-version: 1.0.2
+version: 1.1.0
 main: com.mikemik44.tsgrabber.TSCamShowcase
 api-version: '1.20'
 depend: [ProtocolLib]
@@ -8,3 +8,4 @@ commands:
   tsentity:
     description: Use of editing entity
     usage: /tsentity <cancel/wand/confirm/change>
+    permission: tsentity.admin
