@@ -382,7 +382,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 	}	
 	public static boolean debugEnabled = false;
-	public static float rangeExtra = -1f;
+	public static float rangeExtra = 0f;
 	@EventHandler
 	public void onPlayerLeftClick(PlayerInteractEvent event) {
 		Player player = event.getPlayer();
@@ -486,10 +486,10 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 			return;
 		}
 
-		Location clickedLocation = player.getLocation();
+		Location clickedLocation = player.getEyeLocation();
 		Location diff = selected.getLocation().subtract(clickedLocation);
 		
-		double distance = (Math.abs(diff.getX()) + Math.abs(diff.getY()) + Math.abs(diff.getZ()));
+		double distance = Math.sqrt(diff.getX() * diff.getX() + diff.getY() * diff.getY() + diff.getZ() * diff.getZ());
 		float viewRange = (float) (distance+rangeExtra) / 64.0f;
 		if (debugEnabled) {
 			player.sendMessage(ChatColor.AQUA + "--------DEBUG--------");
