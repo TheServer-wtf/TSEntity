@@ -382,7 +382,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 	}	
 	public static boolean debugEnabled = false;
-
+	public static float rangeExtra = -1f;
 	@EventHandler
 	public void onPlayerLeftClick(PlayerInteractEvent event) {
 		Player player = event.getPlayer();
@@ -488,9 +488,9 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 
 		Location clickedLocation = player.getLocation();
 		Location diff = selected.getLocation().subtract(clickedLocation);
-
-		double distance = Math.abs(diff.getX() * diff.getX() + diff.getY() * diff.getY() + diff.getZ() * diff.getZ());
-		float viewRange = (float) (distance) / 64.0f;
+		
+		double distance = (Math.abs(diff.getX()) + Math.abs(diff.getY()) + Math.abs(diff.getZ()));
+		float viewRange = (float) (distance+rangeExtra) / 64.0f;
 		if (debugEnabled) {
 			player.sendMessage(ChatColor.AQUA + "--------DEBUG--------");
 			player.sendMessage(ChatColor.AQUA + "Distance Using Formula: " + distance);
@@ -739,6 +739,11 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 			}
 
 			player.sendMessage(ChatColor.YELLOW + "Skipped connected entity.");
+			return true;
+		}
+		if (args[0].equalsIgnoreCase("setextrarange")) {
+			rangeExtra = Float.parseFloat(args[1]);
+			player.sendMessage(ChatColor.YELLOW + "Extra Range set to " + rangeExtra + "!");
 			return true;
 		}
 
