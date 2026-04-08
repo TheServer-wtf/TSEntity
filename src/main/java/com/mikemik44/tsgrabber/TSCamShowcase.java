@@ -382,7 +382,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 		}
 	}	
 	public static boolean debugEnabled = false;
-	public static float rangeExtra = 0f;
+	public static float rangeExtra = 0.005f;
 	@EventHandler
 	public void onPlayerLeftClick(PlayerInteractEvent event) {
 		Player player = event.getPlayer();
