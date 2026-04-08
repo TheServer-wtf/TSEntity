@@ -56,6 +56,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 
 	// players currently doing manual step-through
 	private final Set<UUID> manualMode = new HashSet<>();
+
 	@Override
 	public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
 		if (!command.getName().equalsIgnoreCase("tsentity")) {
@@ -63,15 +64,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		}
 
 		if (args.length == 1) {
-			return filterTabs(args[0],
-					"wand",
-					"cancel",
-					"confirm",
-					"change",
-					"deny",
-					"next",
-					"debug",
-					"setoffset");
+			return filterTabs(args[0], "wand", "cancel", "confirm", "change", "deny", "next", "debug", "offset");
 		}
 
 		if (args.length == 2) {
@@ -95,6 +88,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 
 		return result;
 	}
+
 	@Override
 	public void onEnable() {
 
@@ -312,14 +306,16 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		TextComponent change = new TextComponent(ChatColor.YELLOW + "" + ChatColor.BOLD + "Manual");
 		change.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity change"));
 		change.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-				new ComponentBuilder(ChatColor.YELLOW + "Manually edit this passenger, then click Finish Current").create()));
+				new ComponentBuilder(ChatColor.YELLOW + "Manually edit this passenger, then click Finish Current")
+						.create()));
 
 		TextComponent sep2 = new TextComponent(ChatColor.GRAY + " | ");
 
 		TextComponent deny = new TextComponent(ChatColor.RED + "" + ChatColor.BOLD + "Skip");
 		deny.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity deny"));
 		deny.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-				new ComponentBuilder(ChatColor.RED + "Skip only this yellow passenger and move to the next queued one").create()));
+				new ComponentBuilder(ChatColor.RED + "Skip only this yellow passenger and move to the next queued one")
+						.create()));
 
 		TextComponent suffix = new TextComponent(ChatColor.GRAY + "]");
 
@@ -349,7 +345,8 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		TextComponent finishCurrent = new TextComponent(ChatColor.GREEN + "" + ChatColor.BOLD + "[Finish Current]");
 		finishCurrent.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity next"));
 		finishCurrent.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-				new ComponentBuilder(ChatColor.GREEN + "Move to the next queued display, or stop if none remain").create()));
+				new ComponentBuilder(ChatColor.GREEN + "Move to the next queued display, or stop if none remain")
+						.create()));
 
 		TextComponent spacer = new TextComponent(" ");
 
@@ -406,9 +403,11 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			manualMode.remove(player.getUniqueId());
 			finishEditingMessage(player);
 		}
-	}	
+	}
+
 	public static boolean debugEnabled = false;
 	public static float rangeExtra = 0.005f;
+
 	@EventHandler
 	public void onPlayerLeftClick(PlayerInteractEvent event) {
 		Player player = event.getPlayer();
@@ -419,8 +418,8 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		}
 
 		Action action = event.getAction();
-		if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK
-				&& action != Action.LEFT_CLICK_AIR && action != Action.LEFT_CLICK_BLOCK) {
+		if (action != Action.RIGHT_CLICK_AIR && action != Action.RIGHT_CLICK_BLOCK && action != Action.LEFT_CLICK_AIR
+				&& action != Action.LEFT_CLICK_BLOCK) {
 			return;
 		}
 
@@ -444,8 +443,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 					continue;
 				}
 
-				Vector toEntity = e.getLocation().toVector()
-						.add(new Vector(0, e.getHeight() * 0.5, 0))
+				Vector toEntity = e.getLocation().toVector().add(new Vector(0, e.getHeight() * 0.5, 0))
 						.subtract(eyeLoc.toVector());
 
 				if (toEntity.lengthSquared() == 0) {
@@ -473,9 +471,10 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			}
 
 			switchSelection(player, closestLookEntity, GREEN_GLOW);
-			
-			player.sendMessage(ChatColor.GREEN + "Selected entity: " + ChatColor.YELLOW
-					+ closestLookEntity.getType().name() + ChatColor.GRAY + " [" + closestLookEntity.getUniqueId() + "]");
+
+			player.sendMessage(
+					ChatColor.GREEN + "Selected entity: " + ChatColor.YELLOW + closestLookEntity.getType().name()
+							+ ChatColor.GRAY + " [" + closestLookEntity.getUniqueId() + "]");
 
 			if (keepChain) {
 				if (manualMode.contains(player.getUniqueId())) {
@@ -514,24 +513,25 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 
 		Location clickedLocation = player.getEyeLocation();
 		Location diff = selected.getLocation().subtract(clickedLocation);
-		
+
 		double distance = Math.sqrt(diff.getX() * diff.getX() + diff.getY() * diff.getY() + diff.getZ() * diff.getZ());
-		float viewRange = (float) (distance+rangeExtra) / 64.0f;
+		float viewRange = (float) (distance + rangeExtra) / 64.0f;
 		if (debugEnabled) {
 			player.sendMessage(ChatColor.AQUA + "--------DEBUG--------");
 			player.sendMessage(ChatColor.AQUA + "Distance Using Formula: " + distance);
-			player.sendMessage(ChatColor.AQUA + "Distance using whole: " + (Math.abs(diff.getX()) + Math.abs(diff.getY()) + Math.abs(diff.getZ())));
+			player.sendMessage(ChatColor.AQUA + "Distance using whole: "
+					+ (Math.abs(diff.getX()) + Math.abs(diff.getY()) + Math.abs(diff.getZ())));
 			player.sendMessage(ChatColor.AQUA + "Entity Location: " + selected.getLocation().toString());
 			player.sendMessage(ChatColor.AQUA + "Player Location: " + clickedLocation.toString());
 			player.sendMessage(ChatColor.AQUA + "---------------------");
 		}
 		display.setViewRange(viewRange);
-		
-		player.sendMessage(ChatColor.GREEN + "Set display view range to " + ChatColor.YELLOW
-				+ viewRange);
+
+		player.sendMessage(ChatColor.GREEN + "Set display view range to " + ChatColor.YELLOW + viewRange);
 		event.setCancelled(true);
 
-		// In manual mode, do not rebuild the queue. Just keep editing and show the finish button.
+		// In manual mode, do not rebuild the queue. Just keep editing and show the
+		// finish button.
 		if (manualMode.contains(player.getUniqueId())) {
 			updatePendingDistance(player, viewRange);
 			sendFinishCurrentOptions(player);
@@ -579,7 +579,6 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			display.setGlowColorOverride(glowing ? c : null);
 		}
 
-		
 	}
 
 	@Override
@@ -603,7 +602,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			player.sendMessage(ChatColor.YELLOW + "/tsentity debug enable/disable");
 			return true;
 		}
-		
+
 		if (args[0].equalsIgnoreCase("debug")) {
 			if (args.length != 2) {
 				player.sendMessage(ChatColor.YELLOW + "/tsentity debug enable/disable");
@@ -663,9 +662,15 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			player.sendMessage(ChatColor.YELLOW + "Skipped connected entity.");
 			return true;
 		}
-		if (args[0].equalsIgnoreCase("setoffset")) {
-			rangeExtra = Float.parseFloat(args[1]);
-			player.sendMessage(ChatColor.YELLOW + "Extra Range set to " + rangeExtra + "!");
+		if (args[0].equalsIgnoreCase("offset")) {
+			if (args.length == 2) {
+				rangeExtra = Float.parseFloat(args[1]);
+				player.sendMessage(ChatColor.YELLOW + "Extra Range set to " + rangeExtra + "!");
+			} else if (args.length == 1) {
+				player.sendMessage(ChatColor.YELLOW + "Current Offset is " + rangeExtra + "!");
+			} else {
+				player.sendMessage(ChatColor.RED + "Provided too many Params!");
+			}
 			return true;
 		}
 
@@ -697,8 +702,8 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			pendingDisplay.setViewRange(pendingDist);
 			switchSelection(player, pendingEntity, GREEN_GLOW);
 
-			player.sendMessage(ChatColor.GREEN + "Applied view range " + ChatColor.YELLOW
-					+ pendingDist + ChatColor.GREEN + " to the connected display entity.");
+			player.sendMessage(ChatColor.GREEN + "Applied view range " + ChatColor.YELLOW + pendingDist
+					+ ChatColor.GREEN + " to the connected display entity.");
 
 			if (!nextPassengers.isEmpty()) {
 				prependPassengers(player, nextPassengers);

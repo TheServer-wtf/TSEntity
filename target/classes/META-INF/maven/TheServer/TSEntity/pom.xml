@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>TheServer</groupId>
+  <artifactId>TSEntity</artifactId>
+  <version>1.2.1</version>
+
+  <packaging>jar</packaging>
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+  <repositories>
+      <repository>
+          <id>spigot-repo</id>
+          <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+      </repository>
+  </repositories>
+  <dependencies>
+      <dependency>
+            <groupId>org.spigotmc</groupId>
+            <artifactId>spigot-api</artifactId>
+            <version>1.20.6-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+      </dependency>
+      <dependency>
+	    <groupId>net.kyori</groupId>
+	    <artifactId>adventure-text-serializer-plain</artifactId>
+	    <version>4.26.1</version>
+	    <scope>provided</scope>
+	 </dependency>
+    <dependency>
+        <groupId>net.dmulloy2</groupId>
+        <artifactId>ProtocolLib</artifactId>
+        <version>5.3.0</version>
+        <scope>provided</scope>
+    </dependency>
+</dependencies>
+  <build>
+    <sourceDirectory>${project.basedir}/src/main/java</sourceDirectory>
+    <resources>
+      <resource>
+        <directory>${project.basedir}/src/main/resources</directory>
+        <includes>
+          <include>plugin.yml</include>
+          <include>config.yml</include>
+        </includes>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+          <artifactId>maven-antrun-plugin</artifactId>
+          <configuration>
+              <tasks>
+                  <copy file="target/TSGrabber-0.0.1-SNAPSHOT.jar" todir="target/plugins"/>
+              </tasks>
+          </configuration>
+          <executions>
+              <execution>
+                  <phase>install</phase>
+                  <goals>
+                      <goal>run</goal>
+                  </goals>
+              </execution>
+          </executions>
+      </plugin>
+  </plugins>
+  </build>
+  
+</project>
