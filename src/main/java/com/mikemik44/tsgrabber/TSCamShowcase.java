@@ -71,7 +71,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 					"deny",
 					"next",
 					"debug",
-					"setextrarange");
+					"setoffset");
 		}
 
 		if (args.length == 2) {
@@ -663,7 +663,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 			player.sendMessage(ChatColor.YELLOW + "Skipped connected entity.");
 			return true;
 		}
-		if (args[0].equalsIgnoreCase("setextrarange")) {
+		if (args[0].equalsIgnoreCase("setoffset")) {
 			rangeExtra = Float.parseFloat(args[1]);
 			player.sendMessage(ChatColor.YELLOW + "Extra Range set to " + rangeExtra + "!");
 			return true;
