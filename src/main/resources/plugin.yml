@@ -1,8 +1,7 @@
 name: TSCam
-version: 1.2.0
+version: 1.2.1
 main: com.mikemik44.tsgrabber.TSCamShowcase
 api-version: '1.20'
-depend: [ProtocolLib]
 
 commands:
   tsentity:

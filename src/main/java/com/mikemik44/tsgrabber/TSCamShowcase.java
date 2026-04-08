@@ -1,9 +1,11 @@
 package com.mikemik44.tsgrabber;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -14,6 +16,7 @@ import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.Entity;
@@ -28,32 +31,17 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
-import com.comphenix.protocol.PacketType;
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.ProtocolManager;
-import com.comphenix.protocol.events.ListenerPriority;
-import com.comphenix.protocol.events.PacketAdapter;
-import com.comphenix.protocol.events.PacketContainer;
-import com.comphenix.protocol.events.PacketEvent;
-import com.comphenix.protocol.wrappers.WrappedDataValue;
-import com.comphenix.protocol.wrappers.WrappedDataWatcher;
-
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 
-public final class TSCamShowcase extends JavaPlugin implements Listener {
-
-	private static final byte FLAG_GLOWING = 0x40;
+public final class TSCamShowcase extends JavaPlugin implements Listener, TabCompleter {
 
 	private static final Color GREEN_GLOW = Color.fromARGB(255, 50, 255, 50);
 	private static final Color YELLOW_GLOW = Color.fromARGB(255, 255, 255, 50);
 
 	private static final long WAND_COOLDOWN_MS = 250L;
-
-	private ProtocolManager manager;
-
 	// current green selected entity
 	private final Map<UUID, UUID> selectedEntities = new HashMap<>();
 
@@ -68,14 +56,52 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 
 	// players currently doing manual step-through
 	private final Set<UUID> manualMode = new HashSet<>();
+	@Override
+	public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+		if (!command.getName().equalsIgnoreCase("tsentity")) {
+			return Collections.emptyList();
+		}
 
+		if (args.length == 1) {
+			return filterTabs(args[0],
+					"wand",
+					"cancel",
+					"confirm",
+					"change",
+					"deny",
+					"next",
+					"debug",
+					"setextrarange");
+		}
+
+		if (args.length == 2) {
+			if (args[0].equalsIgnoreCase("debug")) {
+				return filterTabs(args[1], "enable", "disable");
+			}
+		}
+
+		return Collections.emptyList();
+	}
+
+	private List<String> filterTabs(String input, String... options) {
+		List<String> result = new ArrayList<>();
+		String check = input == null ? "" : input.toLowerCase(Locale.ROOT);
+
+		for (String option : options) {
+			if (option.toLowerCase(Locale.ROOT).startsWith(check)) {
+				result.add(option);
+			}
+		}
+
+		return result;
+	}
 	@Override
 	public void onEnable() {
-		manager = ProtocolLibrary.getProtocolManager();
 
 		getServer().getPluginManager().registerEvents(this, this);
-		registerMetadataInterceptor();
-
+		if (getCommand("tsentity") != null) {
+			getCommand("tsentity").setTabCompleter(this);
+		}
 		getLogger().info("Plugin TSCam Loaded");
 	}
 
@@ -542,122 +568,18 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 			return false;
 		}
 
-		String expected = ChatColor.translateAlternateColorCodes('&', "&2edit");
+		String expected = ChatColor.translateAlternateColorCodes('&', "&8[&2&lRange Modifier&8]");
 		String actual = item.getItemMeta().getDisplayName();
 		return expected.equals(actual);
 	}
 
-	private void registerMetadataInterceptor() {
-		manager.addPacketListener(
-				new PacketAdapter(this, ListenerPriority.NORMAL, PacketType.Play.Server.ENTITY_METADATA) {
-					@Override
-					public void onPacketSending(PacketEvent event) {
-						Player viewer = event.getPlayer();
-
-						UUID selectedId = selectedEntities.get(viewer.getUniqueId());
-						UUID pendingId = getCurrentPendingId(viewer);
-
-						if (selectedId == null && pendingId == null) {
-							return;
-						}
-
-						PacketContainer packet = event.getPacket();
-						int entityId = packet.getIntegers().read(0);
-
-						Entity entity = findEntityByEntityId(viewer, entityId);
-						if (entity == null) {
-							return;
-						}
-
-						UUID entityUuid = entity.getUniqueId();
-						boolean shouldGlow = (selectedId != null && selectedId.equals(entityUuid))
-								|| (pendingId != null && pendingId.equals(entityUuid));
-
-						rewriteMetadataGlow(packet, shouldGlow);
-					}
-				});
-	}
-
-	private Entity findEntityByEntityId(Player viewer, int entityId) {
-		for (Entity entity : viewer.getWorld().getEntities()) {
-			if (entity.getEntityId() == entityId) {
-				return entity;
-			}
-		}
-		return null;
-	}
-
 	private void sendGlowPacket(Player viewer, Entity entity, boolean glowing, Color c) {
 		if (entity instanceof Display display) {
+			display.setGlowing(glowing ? true : false);
 			display.setGlowColorOverride(glowing ? c : null);
 		}
 
-		PacketContainer packet = manager.createPacket(PacketType.Play.Server.ENTITY_METADATA);
-		packet.getIntegers().write(0, entity.getEntityId());
-
-		byte currentFlags = getEntityFlags(entity);
-		byte newFlags = glowing ? (byte) (currentFlags | FLAG_GLOWING) : (byte) (currentFlags & ~FLAG_GLOWING);
-
-		List<WrappedDataValue> values = new ArrayList<>();
-		WrappedDataWatcher.Serializer byteSerializer = WrappedDataWatcher.Registry.get(Byte.class);
-		values.add(new WrappedDataValue(0, byteSerializer, newFlags));
-
-		packet.getDataValueCollectionModifier().write(0, values);
-
-		try {
-			manager.sendServerPacket(viewer, packet);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
-
-	private void rewriteMetadataGlow(PacketContainer packet, boolean glowing) {
-		List<WrappedDataValue> values = packet.getDataValueCollectionModifier().read(0);
-		if (values == null) {
-			values = new ArrayList<>();
-		} else {
-			values = new ArrayList<>(values);
-		}
-
-		WrappedDataWatcher.Serializer byteSerializer = WrappedDataWatcher.Registry.get(Byte.class);
-		boolean foundFlags = false;
-
-		for (int i = 0; i < values.size(); i++) {
-			WrappedDataValue value = values.get(i);
-
-			if (value.getIndex() == 0 && value.getValue() instanceof Byte) {
-				byte flags = (Byte) value.getValue();
-
-				if (glowing) {
-					flags = (byte) (flags | FLAG_GLOWING);
-				} else {
-					flags = (byte) (flags & ~FLAG_GLOWING);
-				}
-
-				values.set(i, new WrappedDataValue(0, byteSerializer, flags));
-				foundFlags = true;
-				break;
-			}
-		}
-
-		if (!foundFlags && glowing) {
-			values.add(new WrappedDataValue(0, byteSerializer, FLAG_GLOWING));
-		}
-
-		packet.getDataValueCollectionModifier().write(0, values);
-	}
-
-	private byte getEntityFlags(Entity entity) {
-		byte flags = 0;
-
-		if (entity.getFireTicks() > 0) {
-			flags |= 0x01;
-		}
-		if (entity.isGlowing()) {
-			flags |= 0x40;
-		}
-
-		return flags;
+		
 	}
 
 	@Override
@@ -702,7 +624,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener {
 			org.bukkit.inventory.meta.ItemMeta meta = wand.getItemMeta();
 
 			if (meta != null) {
-				meta.setDisplayName(ChatColor.translateAlternateColorCodes('&', "&2edit"));
+				meta.setDisplayName(ChatColor.translateAlternateColorCodes('&', "&8[&2&lRange Modifier&8]"));
 				wand.setItemMeta(meta);
 			}
 
