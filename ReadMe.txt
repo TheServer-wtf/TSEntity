@@ -11,7 +11,7 @@ Display View Distance is based on a mix of Render Distance and distance. for thi
 A View Range of 1 starts at a distance of 64 blocks by default, and this number is static until it reaches beyond the threshold of 8 render distance.
 
 Each proceeding number in render distance increases the DEFAULT distance it can be viewed at by 8 blocks, rather than increasing the MAXIMUM distance.
-On a personal note, I find this rather ridiculous as it makes it impossible for a uniform method of optimization for all players, so it's best to stick with the assumption of 8 Render Distance.
+On a personal note, I find this rather ridiculous as it makes it impossible for a uniform method of optimization for all players, so it's best to stick with the assumption of 8 Render Distance. Use it yourself to ensure for proper setup.
 
 Display Entity Distance Default:
 1=64 blocks
