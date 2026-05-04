@@ -1,6 +1,6 @@
-name: TSCam
-version: 1.2.1
-main: com.mikemik44.tsgrabber.TSCamShowcase
+name: TSEntity
+version: 1.2.2
+main: com.mikemik44.tsgrabber.TSEntity
 api-version: '1.20'
 
 commands:
