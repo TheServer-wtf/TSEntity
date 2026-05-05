@@ -1,4 +1,4 @@
-package com.mikemik44.tsgrabber;
+package com.mikemik44.tsentity;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,7 +36,7 @@ import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
 import net.md_5.bungee.api.chat.TextComponent;
 
-public final class TSCamShowcase extends JavaPlugin implements Listener, TabCompleter {
+public final class TSEntity extends JavaPlugin implements Listener, TabCompleter {
 
 	private static final Color GREEN_GLOW = Color.fromARGB(255, 50, 255, 50);
 	private static final Color YELLOW_GLOW = Color.fromARGB(255, 255, 255, 50);
@@ -96,11 +96,12 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		if (getCommand("tsentity") != null) {
 			getCommand("tsentity").setTabCompleter(this);
 		}
-		getLogger().info("Plugin TSCam Loaded");
+		getLogger().info("Plugin TSEntity Loaded");
 	}
 
 	@Override
 	public void onDisable() {
+		getLogger().info("Plugin TSEntity Disabling");
 		for (Player player : Bukkit.getOnlinePlayers()) {
 			clearPending(player);
 			manualMode.remove(player.getUniqueId());
@@ -284,6 +285,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		}
 	}
 
+	@SuppressWarnings("deprecation")
 	private void sendConnectedEntityOptions(Player player) {
 		int count = 0;
 		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
@@ -331,6 +333,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		player.spigot().sendMessage(line);
 	}
 
+	@SuppressWarnings("deprecation")
 	private void sendFinishCurrentOptions(Player player) {
 		int count = 0;
 		List<UUID> queue = pendingPassengers.get(player.getUniqueId());
@@ -363,6 +366,7 @@ public final class TSCamShowcase extends JavaPlugin implements Listener, TabComp
 		player.spigot().sendMessage(line);
 	}
 
+	@SuppressWarnings("deprecation")
 	private void finishEditingMessage(Player player) {
 		TextComponent finish = new TextComponent(ChatColor.GREEN + "" + ChatColor.BOLD + "Finish Editing");
 		finish.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity cancel"));
