@@ -25,7 +25,7 @@ Fabric Mods Distance Maximum:
 It is for these reasons that it is HIGHLY RECOMMENDED you have your render distance at 8 (or lower, if nessasary) for setup.
 
 
-I'm noting these because I believe it is critical that correct information is known, as many players have conflicting information about the range, one even suggesting it's based on 160 blocks.
+I'm noting these because I believe it is critical that correct information is known, as many players have conflicting information about the range, one even suggesting it's 1=160 blocks.
 I have yet to determine what mod specifically at this time, but I know it's a mod I myself also have installed
 
 
