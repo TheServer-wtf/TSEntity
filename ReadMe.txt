@@ -6,7 +6,7 @@ then left click to set the view distance
 
 
 Important information and Notes from Nathan:
-Display View Distance is based on a mix of the "Render Distance" and "Entity Distance" Settings. for this case, we will assume your Entity Distance is set to 100%. 
+Display View Distance is based on a mix of the "Render Distance" and "Entity Distance" Settings. For this case, we will assume your Entity Distance is set to 100%. 
 
 A View Range of 1 starts at a distance of 64 blocks by default, and this number is static until it reaches beyond the threshold of 8 render distance.
 
