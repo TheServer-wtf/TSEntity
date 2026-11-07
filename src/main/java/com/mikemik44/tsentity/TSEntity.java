@@ -31,6 +31,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
 
+import com.mikemik44.tsentity.culling.Culling;
+
 import net.md_5.bungee.api.chat.ClickEvent;
 import net.md_5.bungee.api.chat.ComponentBuilder;
 import net.md_5.bungee.api.chat.HoverEvent;
@@ -57,6 +59,13 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 	// players currently doing manual step-through
 	private final Set<UUID> manualMode = new HashSet<>();
 
+	// culling boxes (display width/height) fitted from the resource pack's models: see culling/Culling.java
+	private Culling culling;
+	private Frames frames;
+	private Variants variants;
+	private ColorSlider colorSlider;
+	private TintClipboard tintClipboard;
+
 	@Override
 	public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
 		if (!command.getName().equalsIgnoreCase("tsentity")) {
@@ -64,7 +73,29 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 		}
 
 		if (args.length == 1) {
-			return filterTabs(args[0], "wand", "cancel", "confirm", "change", "deny", "next", "debug", "offset");
+			List<String> all = new ArrayList<>(List.of("wand", "cancel", "confirm", "change", "deny", "next", "debug",
+					"offset", "skip", "frames", "variant"));
+			all.addAll(Culling.SUBCOMMANDS);
+			return filterTabs(args[0], all.toArray(new String[0]));
+		}
+
+		if (Culling.SUBCOMMANDS.contains(args[0].toLowerCase(Locale.ROOT))) {
+			return culling.onTabComplete(sender, args);
+		}
+		if (args[0].equalsIgnoreCase("variant")) {
+			if (args.length == 2) {
+				return filterTabs(args[1], "old", "new", "convert", "undo", "list", "remove");
+			}
+			if (args.length == 3 && args[1].equalsIgnoreCase("remove")) {
+				return filterTabs(args[2], variants.names().toArray(new String[0]));
+			}
+			if (args.length >= 3 && (args[1].equalsIgnoreCase("convert") || args[1].equalsIgnoreCase("undo"))) {
+				return filterTabs(args[args.length - 1], "16", "32", "64", "confirm");
+			}
+			return Collections.emptyList();
+		}
+		if (args[0].equalsIgnoreCase("frames")) {
+			return filterTabs(args[args.length - 1], "16", "32", "64", "confirm", "undo");
 		}
 
 		if (args.length == 2) {
@@ -92,7 +123,15 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 	@Override
 	public void onEnable() {
 
+		saveDefaultConfig();
 		getServer().getPluginManager().registerEvents(this, this);
+		culling = new Culling(this);
+		culling.enable();
+		variants = new Variants(this, culling::modelKey, d -> culling.apply(d, false, false), culling::itemMatrix);
+		frames = new Frames(this, variants, culling);
+		colorSlider = new ColorSlider(culling);
+		tintClipboard = new TintClipboard(this, colorSlider);
+		getServer().getPluginManager().registerEvents(tintClipboard, this);
 		if (getCommand("tsentity") != null) {
 			getCommand("tsentity").setTabCompleter(this);
 		}
@@ -148,6 +187,24 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 		return queue != null && queue.contains(entityId);
 	}
 
+	/**
+	 * Everything connected to a display, for the follow-up list: what it rides (and what that rides, up to the base),
+	 * then what rides it. Nathan: the whole stack should be offered, not only the passengers.
+	 */
+	private List<Entity> getConnected(Entity entity) {
+		List<Entity> result = new ArrayList<>();
+		for (Entity v = entity.getVehicle(); v != null; v = v.getVehicle()) {
+			if (isSupportedDisplay(v)) {
+				result.add(v);
+			}
+		}
+		result.addAll(getSupportedPassengers(entity));
+		return result;
+	}
+
+	// per player: displays already handled in this run, so a vehicle's passengers don't bring the selection back
+	private final Map<UUID, Set<UUID>> handled = new HashMap<>();
+
 	private List<Entity> getSupportedPassengers(Entity entity) {
 		List<Entity> result = new ArrayList<>();
 		for (Entity passenger : entity.getPassengers()) {
@@ -183,6 +240,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 
 		List<UUID> queue = pendingPassengers.remove(playerId);
 		selectedDist.remove(playerId);
+		handled.remove(playerId);
 
 		if (queue != null) {
 			for (UUID id : queue) {
@@ -214,6 +272,12 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 
 		pendingPassengers.put(player.getUniqueId(), ids);
 		selectedDist.put(player.getUniqueId(), dist);
+		Set<UUID> done = new HashSet<>();
+		UUID sel = selectedEntities.get(player.getUniqueId());
+		if (sel != null) {
+			done.add(sel);
+		}
+		handled.put(player.getUniqueId(), done);
 		glowCurrentPending(player);
 	}
 
@@ -230,6 +294,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 		}
 
 		UUID oldId = queue.remove(0);
+		handled.computeIfAbsent(player.getUniqueId(), k -> new HashSet<>()).add(oldId);
 		Entity oldEntity = Bukkit.getEntity(oldId);
 		if (oldEntity != null) {
 			sendGlowPacket(player, oldEntity, false, Color.WHITE);
@@ -254,7 +319,8 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 		for (Entity passenger : passengers) {
 			if (passenger != null && isSupportedDisplay(passenger)) {
 				UUID id = passenger.getUniqueId();
-				if (!queue.contains(id)) {
+				Set<UUID> done = handled.get(playerId);
+				if (!queue.contains(id) && (done == null || !done.contains(id))) {
 					queue.add(insertIndex++, id);
 				}
 			}
@@ -390,7 +456,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 			return;
 		}
 
-		List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+		List<Entity> nextPassengers = getConnected(pendingEntity);
 
 		advancePendingQueue(player);
 		switchSelection(player, pendingEntity, GREEN_GLOW);
@@ -411,6 +477,23 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 
 	public static boolean debugEnabled = false;
 	public static float rangeExtra = 0.005f;
+
+	/** A newly placed item display missing its tint (Axiom drops it) takes it from the item a nearby player holds. */
+	@EventHandler
+	public void onDisplaySpawn(org.bukkit.event.entity.EntitySpawnEvent event) {
+		if (event.getEntity() instanceof ItemDisplay d) {
+			if (getConfig().getBoolean("debug-display-spawns", false)) {
+				getLogger().info("[spawn] " + d.getUniqueId() + " at spawn: " + d.getItemStack());
+				Bukkit.getScheduler().runTaskLater(this, () -> getLogger().info("[spawn] " + d.getUniqueId()
+						+ " 5 ticks later: " + d.getItemStack()), 5);
+			}
+			Bukkit.getScheduler().runTask(this, () -> {
+				if (d.isValid()) {
+					colorSlider.copyHeldTint(d);
+				}
+			});
+		}
+	}
 
 	@EventHandler
 	public void onPlayerLeftClick(PlayerInteractEvent event) {
@@ -479,6 +562,22 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 			player.sendMessage(
 					ChatColor.GREEN + "Selected entity: " + ChatColor.YELLOW + closestLookEntity.getType().name()
 							+ ChatColor.GRAY + " [" + closestLookEntity.getUniqueId() + "]");
+			if (!keepChain && !getConnected(closestLookEntity).isEmpty()) {
+				TextComponent skip = new TextComponent(ChatColor.GRAY + "[" + ChatColor.RED + ChatColor.BOLD + "Skip this one"
+						+ ChatColor.GRAY + "]");
+				skip.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/tsentity skip"));
+				skip.setHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, new ComponentBuilder(ChatColor.RED
+						+ "Leave this display's range as it is and start with the next one in its stack").create()));
+				TextComponent line = new TextComponent(ChatColor.YELLOW + "Connected displays: "
+						+ getConnected(closestLookEntity).size() + " ");
+				line.addExtra(skip);
+				player.spigot().sendMessage(line);
+			}
+			if (closestLookEntity instanceof Display sel) {
+				player.sendMessage(ChatColor.GRAY + "Culling box: " + sel.getDisplayWidth() + " x "
+						+ sel.getDisplayHeight() + ", view range " + sel.getViewRange()
+						+ ChatColor.DARK_GRAY + " (/tsentity fit sizes it and its passengers)");
+			}
 
 			if (keepChain) {
 				if (manualMode.contains(player.getUniqueId())) {
@@ -549,7 +648,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 			return;
 		}
 
-		List<Entity> passengers = getSupportedPassengers(selected);
+		List<Entity> passengers = getConnected(selected);
 		if (!passengers.isEmpty()) {
 			setPendingList(player, passengers, viewRange);
 			sendConnectedEntityOptions(player);
@@ -585,14 +684,128 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 
 	}
 
+	/**
+	 * Skip the selected display before setting any range (Nathan): it keeps its range, and the next display in its
+	 * stack becomes the green selection, the rest queued yellow. Left-clicking then sets the range for that one and
+	 * the usual Apply / Manual / Skip carries on through the rest.
+	 */
+	private void skipSelected(Player player) {
+		UUID selectedId = selectedEntities.get(player.getUniqueId());
+		Entity selected = selectedId == null ? null : Bukkit.getEntity(selectedId);
+		if (selected == null) {
+			player.sendMessage(ChatColor.RED + "Select a display with the wand first.");
+			return;
+		}
+		List<Entity> rest = getConnected(selected);
+		manualMode.remove(player.getUniqueId());
+		clearPending(player);
+		if (rest.isEmpty()) {
+			switchSelection(player, null, GREEN_GLOW);
+			player.sendMessage(ChatColor.YELLOW + "Skipped. Nothing is connected to it, so there's nothing next.");
+			return;
+		}
+		Entity first = rest.remove(0);
+		switchSelection(player, first, GREEN_GLOW);
+		Set<UUID> done = new HashSet<>(List.of(selected.getUniqueId(), first.getUniqueId()));
+		handled.put(player.getUniqueId(), done);
+		List<UUID> ids = new ArrayList<>();
+		for (Entity e : rest) {
+			ids.add(e.getUniqueId());
+		}
+		if (!ids.isEmpty()) {
+			pendingPassengers.put(player.getUniqueId(), ids);
+		}
+		prependPassengers(player, getConnected(first));
+		glowCurrentPending(player);
+		player.sendMessage(ChatColor.YELLOW + "Skipped. Now on " + ChatColor.GREEN + first.getType().name()
+				+ ChatColor.YELLOW + ": left-click to set its range" + (getCurrentPendingId(player) != null
+						? ", then Apply / Manual / Skip goes on through the rest." : "."));
+	}
+
+	/** Fit the culling box of the wand's selection's whole stack: from the display at its base up through every rider. */
+	private void fitSelection(Player player) {
+		UUID selectedId = selectedEntities.get(player.getUniqueId());
+		Entity selected = selectedId == null ? null : Bukkit.getEntity(selectedId);
+		if (selected == null) {
+			player.sendMessage(ChatColor.RED + "Select a display with the wand first (/tsentity wand, right click).");
+			return;
+		}
+		int fitted = 0, unknown = 0;
+		Entity base = selected;
+		while (base.getVehicle() != null && isSupportedDisplay(base.getVehicle())) {
+			base = base.getVehicle();
+		}
+		List<Entity> todo = new ArrayList<>(List.of(base));
+		while (!todo.isEmpty()) {
+			Entity e = todo.remove(0);
+			todo.addAll(getSupportedPassengers(e));
+			if (!(e instanceof ItemDisplay d)) {
+				continue;
+			}
+			Culling.Fit f = culling.apply(d);
+			if (f == null) {
+				unknown++;
+				continue;
+			}
+			fitted++;
+			player.sendMessage(ChatColor.GREEN + f.model() + ": " + ChatColor.YELLOW + String.format(Locale.ROOT,
+					"%.4f x %.4f", f.width(), f.height()));
+		}
+		player.sendMessage(ChatColor.GREEN + "Fitted " + fitted + " display(s)"
+				+ (unknown > 0 ? ChatColor.GRAY + ", " + unknown + " with no model in the packs" : "") + ".");
+	}
+
 	@Override
 	public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+		if (command.getName().equalsIgnoreCase("tintclipboard")) {
+			if (sender instanceof Player p) {
+				p.getInventory().addItem(tintClipboard.item());
+				p.sendMessage(ChatColor.AQUA + "Paint Brush: sneak + right-click a tinted prop to pick up its colours, right-click another to paint them on.");
+			} else {
+				sender.sendMessage("In game only.");
+			}
+			return true;
+		}
+		if (command.getName().equalsIgnoreCase("colorslider")) {
+			if (sender instanceof Player p) {
+				colorSlider.open(p);
+			} else {
+				sender.sendMessage("In game only.");
+			}
+			return true;
+		}
 		if (!command.getName().equalsIgnoreCase("tsentity")) {
 			return false;
 		}
 
+		if (args.length > 0 && !args[0].equalsIgnoreCase("fit")
+				&& Culling.SUBCOMMANDS.contains(args[0].toLowerCase(Locale.ROOT))) {
+			return culling.onCommand(sender, args);
+		}
+
 		if (!(sender instanceof Player player)) {
 			sender.sendMessage(ChatColor.RED + "Only players can use this command.");
+			return true;
+		}
+
+		if (args.length > 0 && args[0].equalsIgnoreCase("fit")) {
+			fitSelection(player);
+			return true;
+		}
+
+		if (args.length > 0 && args[0].equalsIgnoreCase("frames")) {
+			frames.command(player, args);
+			return true;
+		}
+
+		if (args.length > 0 && args[0].equalsIgnoreCase("variant")) {
+			UUID sel = selectedEntities.get(player.getUniqueId());
+			variants.command(player, args, sel == null ? null : Bukkit.getEntity(sel));
+			return true;
+		}
+
+		if (args.length > 0 && args[0].equalsIgnoreCase("skip")) {
+			skipSelected(player);
 			return true;
 		}
 
@@ -604,6 +817,18 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 			player.sendMessage(ChatColor.YELLOW + "/tsentity deny");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity next");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity debug enable/disable");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity skip " + ChatColor.GRAY + "- skip the selected one, start on the next in its stack");
+			player.sendMessage(ChatColor.GOLD + "Converting:");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity frames [radius] [confirm] " + ChatColor.GRAY + "- item frames into matching item displays");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity frames undo [radius] " + ChatColor.GRAY + "- put converted frames back");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity variant " + ChatColor.GRAY + "- teach old -> remade model pairs, then convert old ones");
+			player.sendMessage(ChatColor.GOLD + "Culling:");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity fit " + ChatColor.GRAY + "- the wand's selection and its passengers");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity look [shift] [center] " + ChatColor.GRAY + "- the display you look at");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity near [radius] [shift] [center]");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity center | shift " + ChatColor.GRAY + "- move the one you look at");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity ignore <add|remove|list>");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity report | reload");
 			return true;
 		}
 
@@ -700,7 +925,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 				return true;
 			}
 
-			List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+			List<Entity> nextPassengers = getConnected(pendingEntity);
 
 			advancePendingQueue(player);
 			pendingDisplay.setViewRange(pendingDist);
@@ -741,7 +966,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 				return true;
 			}
 
-			List<Entity> nextPassengers = getSupportedPassengers(pendingEntity);
+			List<Entity> nextPassengers = getConnected(pendingEntity);
 
 			advancePendingQueue(player);
 			switchSelection(player, pendingEntity, GREEN_GLOW);

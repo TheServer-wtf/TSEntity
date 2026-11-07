@@ -1,0 +1,36 @@
+# Resource packs to read models from, in priority order: a folder, a .zip, or a URL (downloaded in the background to
+# plugins/TSEntity/packs/ and read from there). The first pack that has a file wins. Empty by default: add your own,
+# for example
+#   - "plugins/TSEntity/pack.zip"
+#   - "https://example.com/your-pack.zip"
+packs: []
+# How often to download URL packs again, in minutes (0: only at start-up and /tsentity reload).
+pack-refresh-minutes: 30
+# Fit item displays when they're newly placed (summoned, Axiom, plugins). Displays that already exist and load in with
+# their chunk are left alone; /cull near fits those when asked.
+auto: true
+# Leave displays alone whose width/height someone already set by hand.
+keep-manual: false
+# Extra room around the model, in blocks (0: Nathan wants a 3-wide model at exactly 2).
+margin: 0
+# Item displays draw their model centred on the entity, so half of it usually hangs below the entity's feet, where the
+# culling box (which only grows upward) can't reach. On: move such displays down by the overhang and lift the model by
+# the same amount (looks identical; the entity's position changes). Off: report it only (/cull ... shift does it once).
+shift-below: false
+# Sideways: the box is a square around the entity, so a model off to one side gets a box wider than itself. On: move
+# the entity to the model's middle and the model back (looks identical; the entity's x/z change). Off: report only
+# (/cull ... center does it once).
+shift-sideways: false
+# Displays made from item frames (/tsentity frames) are centred like that anyway, unless this is off.
+# Nathan: centring off by default, except for what was originally an item frame.
+center-frames: true
+# Models standing on tilted feet (rotated cubes as legs) may sink until each leg's highest bottom corner is on the
+# floor. Anything named seating or chair is included automatically; add others with /tsentity feet add.
+feet-models: []
+# Size every box as if the model were placed properly (Nathan's rule): an off-centre model gets the width its own size
+# needs, centred; one sunk into the floor gets the height it needs with its bottom 0.5 below the entity. Off: size it
+# exactly where it sits now (wider for off-centre, cut short for sunk). Nothing is moved either way.
+assume-positioned: true
+# Models that keep their own offset: never centred or shifted, only their box is fitted. Add the one you're holding
+# with /cull ignore add; /cull ignore remove <model> (tab completes) takes it off.
+ignore-offset: []
