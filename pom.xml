@@ -6,24 +6,24 @@
 
   <groupId>TheServer</groupId>
   <artifactId>TSEntity</artifactId>
-  <version>1.2.2</version>
+  <version>1.3.0</version>
 
   <packaging>jar</packaging>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <maven.compiler.release>17</maven.compiler.release>
+    <maven.compiler.release>25</maven.compiler.release>
   </properties>
   <repositories>
       <repository>
-          <id>spigot-repo</id>
-          <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
+          <id>papermc</id>
+          <url>https://repo.papermc.io/repository/maven-public/</url>
       </repository>
   </repositories>
   <dependencies>
       <dependency>
-            <groupId>org.spigotmc</groupId>
-            <artifactId>spigot-api</artifactId>
-            <version>1.20.6-R0.1-SNAPSHOT</version>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>26.3.build.205-stable</version>
             <scope>provided</scope>
       </dependency>
       <dependency>

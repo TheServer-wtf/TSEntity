@@ -1,10 +1,28 @@
 name: TSEntity
-version: 1.2.2
+version: 1.3.0
 main: com.mikemik44.tsentity.TSEntity
-api-version: '1.20'
+api-version: '26.3'
+description: Display entity tools for TheServer - view range wand, and culling boxes fitted from the resource pack's models
 
 commands:
   tsentity:
-    description: Use of editing entity
-    usage: /tsentity <cancel/wand/confirm/change>
+    description: Edit display entities (view range wand, culling boxes)
+    usage: /tsentity <wand|cancel|confirm|change|deny|next|debug|offset|fit|look|near|center|shift|ignore|report|reload>
     permission: tsentity.admin
+
+  colorslider:
+    description: Colour the tinted item in hand, or the item display you look at
+    usage: /colorslider
+    aliases: [tint]
+    permission: tsentity.admin
+
+  tintclipboard:
+    description: The Paint Brush, which picks up tint colours from one prop and paints them onto another
+    usage: /tintclipboard
+    aliases: [paintbrush]
+    permission: tsentity.admin
+
+permissions:
+  tsentity.admin:
+    description: Use /tsentity
+    default: op
