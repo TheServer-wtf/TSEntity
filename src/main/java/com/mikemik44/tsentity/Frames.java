@@ -102,7 +102,7 @@ final class Frames {
         }
         p.sendMessage(ChatColor.GREEN + "Converted " + made + " item frame(s) into item displays"
                 + (remade > 0 ? ", " + remade + " of them straight to their taught remake" : "")
-                + (tidied > 0 ? ", " + tidied + " tidied (mode none, straightened, flush)" : "") + ".");
+                + (tidied > 0 ? ", " + tidied + " tidied (mode none, flush)" : "") + ".");
     }
 
     /** The display for one frame (the frame is removed). */
@@ -138,15 +138,12 @@ final class Frames {
         return d;
     }
 
-    /** How far off a 22.5° step a turn may be and still count as a mistake to straighten. */
-    private static final float STRAIGHTEN_DEG = 3f;
     /** How close the model's wall side has to be to a block line to be pulled onto it. */
     private static final float FLUSH = 0.1f;
 
     /**
      * Nathan's hand-placed remakes (2026-11-06): the frame look copied exactly also copies its small mistakes. Tidy
-     * the display the way he places them: mode none; a turn a few degrees off a 22.5° step straightened (e.g. a model's
-     * item-frame transform leaning 1.25°); the model's side toward the wall the frame hung on pulled onto the nearest
+     * the display the way he places them: mode none; the turn kept exactly as the frame drew it; the model's side toward the wall the frame hung on pulled onto the nearest
      * block line when it's within 0.1 block (sunk 0.07 into a floor, 1/4 px into a wall); the entity in the middle of
      * the block the model sits in, unturned, with all of the placement in its transformation. False (left as the frame
      * drew it) when the packs don't know the model.
@@ -158,10 +155,10 @@ final class Frames {
         Matrix4f drawn = variants.drawn(d);
         Vector3f pos = drawn.getTranslation(new Vector3f());
         Vector3f scale = drawn.getScale(new Vector3f());
+        // the turn is kept exactly as the frame drew it (Nathan, 2026-11-07: rotation was never meant to be corrected,
+        // only the position, e.g. a model sunk into the floor)
         Quaternionf rot = drawn.getNormalizedRotation(new Quaternionf());
-        Vector3f euler = rot.getEulerAnglesYXZ(new Vector3f());
-        Quaternionf straight = new Quaternionf().rotationYXZ(snap(euler.y), snap(euler.x), snap(euler.z));
-        Matrix4f clean = new Matrix4f().translation(pos).rotate(straight).scale(scale);
+        Matrix4f clean = new Matrix4f().translation(pos).rotate(rot).scale(scale);
         // the model's box in the world as drawn by `clean`
         Matrix4f toWorld = new Matrix4f(clean).translate(-0.5f, -0.5f, -0.5f).scale(1 / 16f);
         Vector3f min = new Vector3f(Float.MAX_VALUE), max = new Vector3f(-Float.MAX_VALUE), v = new Vector3f();
@@ -210,13 +207,6 @@ final class Frames {
         d.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
         d.setTransformationMatrix(transformation);
         return true;
-    }
-
-    /** An angle a few degrees off a 22.5° step put on the step; any other angle kept. */
-    private static float snap(float radians) {
-        float step = (float) Math.toRadians(22.5);
-        float near = Math.round(radians / step) * step;
-        return Math.abs(radians - near) <= Math.toRadians(STRAIGHTEN_DEG) ? near : radians;
     }
 
     /** Put a converted display back as the frame it came from. */
