@@ -434,6 +434,44 @@ public final class Culling implements Listener {
                 notes, detail);
     }
 
+    /**
+     * Where a display's model really is (2026-11-12, for /tsentity cullrange): the box around its model's corners as
+     * offsets from the entity, in blocks {minX, minY, minZ, maxX, maxY, maxZ}, through the entity's rotation, its
+     * transformation and (item displays) the model's display transform. Item displays the packs know and block displays
+     * (their block); null for anything else (text, unknown models), which is then traced from its origin only.
+     */
+    public float[] modelBox(Display d) {
+        List<Vector3f> pts = new ArrayList<>();
+        Matrix4f m;
+        if (d instanceof ItemDisplay id) {
+            ItemStack item = id.getItemStack();
+            if (item == null || item.getType().isAir()) return null;
+            Key key = item.getData(DataComponentTypes.ITEM_MODEL);
+            String mid = key != null ? key.asString() : "minecraft:" + item.getType().getKey().getKey();
+            var data = item.getData(DataComponentTypes.CUSTOM_MODEL_DATA);
+            Models.Cmd cmd = data == null ? Models.Cmd.NONE : new Models.Cmd(data.floats(), data.flags(), data.strings());
+            Models.Shape shape = models.item(mid, cmd);
+            if (shape == null || shape.corners().isEmpty()) return null;
+            m = entityMatrix(d).mul(modeMatrix(shape, id.getItemDisplayTransform().name().toLowerCase(Locale.ROOT)))
+                    .translate(-0.5f, -0.5f, -0.5f).scale(1 / 16f);
+            pts.addAll(shape.corners());
+        } else if (d instanceof org.bukkit.entity.BlockDisplay) {
+            // a block display draws its block from 0 to 1 in its own frame (no item half turn)
+            m = entityMatrix(d).rotateY((float) Math.PI);
+            for (int i = 0; i < 8; i++) pts.add(new Vector3f(i & 1, i >> 1 & 1, i >> 2 & 1));
+        } else {
+            return null;
+        }
+        float[] b = {Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE};
+        Vector3f v = new Vector3f();
+        for (Vector3f c : pts) {
+            m.transformPosition(c, v);
+            b[0] = Math.min(b[0], v.x); b[1] = Math.min(b[1], v.y); b[2] = Math.min(b[2], v.z);
+            b[3] = Math.max(b[3], v.x); b[4] = Math.max(b[4], v.y); b[5] = Math.max(b[5], v.z);
+        }
+        return b;
+    }
+
     /** The entity's own rotation and transformation, as the display renderer applies them (item displays turn 180°). */
     static Matrix4f entityMatrix(Display d) {
         Matrix4f m = new Matrix4f();

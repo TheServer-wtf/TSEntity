@@ -133,7 +133,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 		culling.enable();
 		variants = new Variants(this, culling::modelKey, d -> culling.apply(d, false, false), culling::itemMatrix);
 		frames = new Frames(this, variants, culling);
-		cullRange = new CullRange(this);
+		cullRange = new CullRange(this, culling);
 		colorSlider = new ColorSlider(culling);
 		tintClipboard = new TintClipboard(this, colorSlider);
 		getServer().getPluginManager().registerEvents(tintClipboard, this);
