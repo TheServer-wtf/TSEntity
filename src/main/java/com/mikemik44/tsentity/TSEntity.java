@@ -62,6 +62,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 	// culling boxes (display width/height) fitted from the resource pack's models: see culling/Culling.java
 	private Culling culling;
 	private Frames frames;
+	private CullRange cullRange;
 	private Variants variants;
 	private ColorSlider colorSlider;
 	private TintClipboard tintClipboard;
@@ -74,7 +75,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 
 		if (args.length == 1) {
 			List<String> all = new ArrayList<>(List.of("wand", "cancel", "confirm", "change", "deny", "next", "debug",
-					"offset", "skip", "frames", "variant"));
+					"offset", "skip", "frames", "variant", "cullrange"));
 			all.addAll(Culling.SUBCOMMANDS);
 			return filterTabs(args[0], all.toArray(new String[0]));
 		}
@@ -93,6 +94,9 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 				return filterTabs(args[args.length - 1], "16", "32", "64", "confirm");
 			}
 			return Collections.emptyList();
+		}
+		if (args[0].equalsIgnoreCase("cullrange")) {
+			return filterTabs(args[args.length - 1], "16", "32", "64", "confirm", "undo");
 		}
 		if (args[0].equalsIgnoreCase("frames")) {
 			return filterTabs(args[args.length - 1], "16", "32", "64", "confirm", "undo");
@@ -129,6 +133,7 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 		culling.enable();
 		variants = new Variants(this, culling::modelKey, d -> culling.apply(d, false, false), culling::itemMatrix);
 		frames = new Frames(this, variants, culling);
+		cullRange = new CullRange(this);
 		colorSlider = new ColorSlider(culling);
 		tintClipboard = new TintClipboard(this, colorSlider);
 		getServer().getPluginManager().registerEvents(tintClipboard, this);
@@ -804,6 +809,11 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 			return true;
 		}
 
+		if (args.length > 0 && args[0].equalsIgnoreCase("cullrange")) {
+			cullRange.command(player, args);
+			return true;
+		}
+
 		if (args.length > 0 && args[0].equalsIgnoreCase("skip")) {
 			skipSelected(player);
 			return true;
@@ -822,6 +832,9 @@ public final class TSEntity extends JavaPlugin implements Listener, TabCompleter
 			player.sendMessage(ChatColor.YELLOW + "/tsentity frames [radius] [confirm] " + ChatColor.GRAY + "- item frames into matching item displays");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity frames undo [radius] " + ChatColor.GRAY + "- put converted frames back");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity variant " + ChatColor.GRAY + "- teach old -> remade model pairs, then convert old ones");
+			player.sendMessage(ChatColor.GOLD + "View range:");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity cullrange [radius] [confirm] " + ChatColor.GRAY + "- trace how far each display can be seen from and lower its range to that (only ranges of 1 or below, only ever lower)");
+			player.sendMessage(ChatColor.YELLOW + "/tsentity cullrange undo " + ChatColor.GRAY + "- put the last ones back");
 			player.sendMessage(ChatColor.GOLD + "Culling:");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity fit " + ChatColor.GRAY + "- the wand's selection and its passengers");
 			player.sendMessage(ChatColor.YELLOW + "/tsentity look [shift] [center] " + ChatColor.GRAY + "- the display you look at");

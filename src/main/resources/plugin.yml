@@ -7,7 +7,7 @@ description: Display entity tools for TheServer - view range wand, and culling b
 commands:
   tsentity:
     description: Edit display entities (view range wand, culling boxes)
-    usage: /tsentity <wand|cancel|confirm|change|deny|next|debug|offset|fit|look|near|center|shift|ignore|report|reload>
+    usage: /tsentity <wand|cancel|confirm|change|deny|next|debug|offset|cullrange|fit|look|near|center|shift|ignore|report|reload>
     permission: tsentity.admin
 
   colorslider:
